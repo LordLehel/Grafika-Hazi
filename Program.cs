@@ -47,7 +47,7 @@ namespace Szeminarium1
         {
             // Ablak beállítások konfigurálása
             WindowOptions windowOptions = WindowOptions.Default;
-            windowOptions.Title = "1. szeminárium - háromszög";
+            windowOptions.Title = "1. házi - kocka";
             windowOptions.Size = new Silk.NET.Maths.Vector2D<int>(500, 500);
 
             // Ablak példányosítása
@@ -148,6 +148,7 @@ namespace Szeminarium1
             Gl.BindVertexArray(vao);
 
             // Vertex adatok (pozíciók és színek) definiálása
+            // 1. FÁZIS: Izometrikus kocka, minden szog 30 fokos, 0.8 egység oldalhosszúságú, középpontja az origóban
             float[] vertexArray = new float[] {
                 -0.6928f, -0.4f, 0.0f,
                 -0.6928f, 0.4f, 0.0f,
@@ -229,7 +230,54 @@ namespace Szeminarium1
             // Renderelés + adatok feloldása
             Gl.DrawElements(GLEnum.Triangles, (uint)indexArray.Length, GLEnum.UnsignedInt, null); // we used element buffer
             
-            CheckGLError("Drawing elements");
+            CheckGLError("Drawing triangles");
+
+            // 2. FÁZIS: A VONALAK (RUBIK-KOCKA RÁCS) KIRAJZOLÁSA
+            float[] lineVertexArray = new float[] {
+                // Bal oldal
+                -0.46186f,  0.266f, 0.0f,    -0.46186f, -0.533f, 0.0f,
+                -0.23093f,  0.133f, 0.0f,    -0.23093f, -0.666f, 0.0f,
+                -0.6928f,   0.133f, 0.0f,     0.0f,     -0.266f, 0.0f,
+                 0.0f,     -0.533f, 0.0f,    -0.6928f,  -0.133f, 0.0f,
+
+                // Jobb oldal
+                 0.46186f,  0.266f, 0.0f,     0.46186f, -0.533f, 0.0f,
+                 0.23093f,  0.133f, 0.0f,     0.23093f, -0.666f, 0.0f,
+                 0.6928f,   0.133f, 0.0f,     0.0f,     -0.266f, 0.0f,
+                 0.0f,     -0.533f, 0.0f,     0.6928f,  -0.133f, 0.0f,
+
+                // Felső oldal
+                -0.23093f,  0.133f, 0.0f,     0.46186f,  0.533f, 0.0f,
+                -0.46186f,  0.266f, 0.0f,     0.23093f,  0.666f, 0.0f,
+                 0.23093f,  0.133f, 0.0f,    -0.46186f,  0.533f, 0.0f,
+                 0.46186f,  0.266f, 0.0f,    -0.23093f,  0.666f, 0.0f
+            };
+
+            // Fekete szín generálása minden vonalponthoz (24 pont * 4 komponens)
+            float[] lineColorArray = new float[24 * 4];
+            for (int i = 0; i < 24 * 4; i += 4)
+            {
+                lineColorArray[i] = 0.0f;     // R
+                lineColorArray[i + 1] = 0.0f; // G
+                lineColorArray[i + 2] = 0.0f; // B
+                lineColorArray[i + 3] = 1.0f; // A
+            }
+
+            // Vonalak pozíciójának bindolása
+            uint lineVertices = Gl.GenBuffer();
+            Gl.BindBuffer(GLEnum.ArrayBuffer, lineVertices);
+            Gl.BufferData(GLEnum.ArrayBuffer, (ReadOnlySpan<float>)lineVertexArray.AsSpan(), GLEnum.StaticDraw);
+            Gl.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 0, null);
+
+            // Vonalak színének bindolása
+            uint lineColors = Gl.GenBuffer();
+            Gl.BindBuffer(GLEnum.ArrayBuffer, lineColors);
+            Gl.BufferData(GLEnum.ArrayBuffer, (ReadOnlySpan<float>)lineColorArray.AsSpan(), GLEnum.StaticDraw);
+            Gl.VertexAttribPointer(1, 4, VertexAttribPointerType.Float, false, 0, null);
+
+            // Kirajzolás (24 csúcspont alkotja a 12 vonalat)
+            Gl.DrawArrays(GLEnum.Lines, 0, 24);
+            CheckGLError("DrawArrays (Vonalak)");
 
             Gl.BindBuffer(GLEnum.ElementArrayBuffer, 0);
             Gl.BindVertexArray(vao);
