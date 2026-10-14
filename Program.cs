@@ -149,28 +149,38 @@ namespace Szeminarium1
 
             // Vertex adatok (pozíciók és színek) definiálása
             float[] vertexArray = new float[] {
-                -0.5f, -0.5f, 0.0f,
-                -0.5f, +0.5f, 0.0f,
-                +0.5f, +0.5f, 0.0f,
-                +0.5f, -0.5f, 0.0f,
+                -0.6928f, -0.4f, 0.0f,
+                -0.6928f, 0.4f, 0.0f,
+                0.0f, 0.0f, 0.0f,
+                0.0f, -0.8f, 0.0f,
 
-                 0.0f, +0.5f, 0.0f,
-                +0.5f, 0.0f, 0.0f,
-                 0.0f, -0.5f, 0.0f,
-                -0.5f, 0.0f, 0.0f
+                0.0f, -0.8f, 0.0f,
+                0.0f, 0.0f, 0.0f,
+                0.6928f, -0.4f, 0.0f,
+                0.6928f, 0.4f, 0.0f,
+
+                0.0f, 0.0f, 0.0f,
+                -0.6928f, 0.4f, 0.0f,
+                0.0f, 0.8f, 0.0f,
+                0.6928f, 0.4f, 0.0f,
             };
 
             // Színadatok definiálása (RGBA formátumban)
             float[] colorArray = new float[] {
-                1.0f, 0.5f, 0.0f, 1.0f,
-                1.0f, 0.99f, 0.5f, 1.0f,
-                0.5f, 0.5f, 1.0f, 1.0f,
-                0.7f, 0.0f, 1.0f, 1.0f,
-
-                1.0f, 1.0f, 1.0f, 1.0f,
                 0.0f, 0.0f, 1.0f, 1.0f,
-                1.0f, 0.05f, 0.6f, 1.0f,
-                1.0f, 1.0f, 0.0f, 1.0f
+                0.0f, 0.0f, 1.0f, 1.0f,
+                0.0f, 0.0f, 1.0f, 1.0f,
+                0.0f, 0.0f, 1.0f, 1.0f,
+
+                1.0f, 0.0f, 0.0f, 1.0f,
+                1.0f, 0.0f, 0.0f, 1.0f,
+                1.0f, 0.0f, 0.0f, 1.0f,
+                1.0f, 0.0f, 0.0f, 1.0f,
+
+                1.0f, 1.0f, 0.0f, 1.0f,
+                1.0f, 1.0f, 0.0f, 1.0f,
+                1.0f, 1.0f, 0.0f, 1.0f,
+                1.0f, 1.0f, 0.0f, 1.0f,
             };
 
             // Indexek definiálása a háromszög rajzolásához
@@ -178,7 +188,9 @@ namespace Szeminarium1
                 0, 1, 2,
                 2, 3, 0,
                 4, 5, 6,
-                6, 7, 4
+                6, 7, 5,
+                8, 9, 10,
+                10, 11, 8
             };
 
             // ADATOK GPU-ra másolása
