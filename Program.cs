@@ -62,14 +62,26 @@ namespace Szeminarium1
             graphicWindow.Run();
         }
 
+        // Globális hibakezelő metódus
+        private static void CheckGLError(string stepName)
+        {
+            GLEnum error;
+            // Az OpenGL sorban lévő hibák ellenőrzése
+            while ((error = Gl.GetError()) != GLEnum.NoError)
+            {
+                Console.WriteLine($"OpenGL error after {stepName}: {error}");
+            }
+        }
+
         private static void GraphicWindow_Load()
         {
             Console.WriteLine("> Loading the graphic window...");
             // OpenGL kontextus lekérése a Silk.NET ablakból
             Gl = graphicWindow.CreateOpenGL();
-
+            
             // Háttérszín beállítása (fehér)
             Gl.ClearColor(System.Drawing.Color.White);
+            CheckGLError("Setting clear color");
 
             // Shaderek létrehozása
             Console.WriteLine("> Creating shaders...");
@@ -85,6 +97,8 @@ namespace Szeminarium1
             Gl.GetShader(vshader, ShaderParameterName.CompileStatus, out int vStatus);
             if (vStatus != (int)GLEnum.True)
                 throw new Exception("Vertex shader failed to compile: " + Gl.GetShaderInfoLog(vshader));
+
+            CheckGLError("Compiling vertex shader");
 
             // FRAGMENT SHADER
             // Fordítás
@@ -111,6 +125,8 @@ namespace Szeminarium1
             {
                 Console.WriteLine($"Error linking shader {Gl.GetProgramInfoLog(program)}");
             }
+
+            CheckGLError("Linking shader program");
         }
 
         private static void GraphicWindow_Update(double deltaTime)
@@ -125,6 +141,7 @@ namespace Szeminarium1
 
             // Töröljük a képernyőt a háttérszínnel
             Gl.Clear(ClearBufferMask.ColorBufferBit);
+            CheckGLError("Clearing the screen");
 
             // Vertex Array Object (VAO) létrehozása és bindolása
             uint vao = Gl.GenVertexArray();
@@ -173,6 +190,8 @@ namespace Szeminarium1
             Gl.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 0, null);
             Gl.EnableVertexAttribArray(0);
 
+            CheckGLError("Setting up vertex buffer");
+
             // Color Buffer Object (CBO) létrehozása
             uint colors = Gl.GenBuffer();
             Gl.BindBuffer(GLEnum.ArrayBuffer, colors);
@@ -180,10 +199,14 @@ namespace Szeminarium1
             Gl.VertexAttribPointer(1, 4, VertexAttribPointerType.Float, false, 0, null);
             Gl.EnableVertexAttribArray(1);
 
+            CheckGLError("Setting up color buffer");
+
             // EBO (Element Buffer Object) létrehozása
             uint indices = Gl.GenBuffer();
             Gl.BindBuffer(GLEnum.ElementArrayBuffer, indices);
             Gl.BufferData(GLEnum.ElementArrayBuffer, (ReadOnlySpan<uint>)indexArray.AsSpan(), GLEnum.StaticDraw);
+
+            CheckGLError("Setting up index buffer");
 
             // Feloldjuk a buffer bindolását, hogy ne maradjon véletlenül bindolva a következő rendereléshez
             Gl.BindBuffer(GLEnum.ArrayBuffer, 0);
@@ -193,6 +216,9 @@ namespace Szeminarium1
 
             // Renderelés + adatok feloldása
             Gl.DrawElements(GLEnum.Triangles, (uint)indexArray.Length, GLEnum.UnsignedInt, null); // we used element buffer
+            
+            CheckGLError("Drawing elements");
+
             Gl.BindBuffer(GLEnum.ElementArrayBuffer, 0);
             Gl.BindVertexArray(vao);
 
@@ -201,6 +227,8 @@ namespace Szeminarium1
             Gl.DeleteBuffer(colors);
             Gl.DeleteBuffer(indices);
             Gl.DeleteVertexArray(vao);
+
+            CheckGLError("Cleaning up buffers and VAO");
         }
     }
 }
