@@ -1,8 +1,9 @@
-﻿using Grafika_Hazi;
-using Silk.NET.Maths;
+﻿using Silk.NET.Maths;
 using Silk.NET.OpenGL;
 using Silk.NET.Windowing;
 using Silk.NET.Input;
+using System;
+using System.Collections.Generic;
 
 namespace Grafika_Hazi
 {
@@ -11,10 +12,14 @@ namespace Grafika_Hazi
         // The main entry point for the application.
         private static IWindow window = null!;
         private static GL Gl = null!;
+        private static IKeyboard primaryKeyboard = null!;
         private static uint program;
 
+        // Camera for the Rubik's cube
+        private static Camera camera = null!;
+
         // Uniform locations
-        private static int modelLoc, viewLoc, projLoc;
+        private static int modelLoc, viewLoc, projLoc, sliceRotLoc;
 
 
         // Rubik's cube pieces
@@ -22,9 +27,14 @@ namespace Grafika_Hazi
         {
             public uint Vao;
             public Matrix4X4<float> ModelMatrix;
+            public int GridY; // The Y position in the Rubik's cube grid (-1, 0, 1)
         }
         private static List<RubikPiece> rubikPieces = new();
 
+        // Variables for the animation
+        private static float currentAngle = 0f; // Current rotation angle in radians
+        private static float targetAngle = 0f;  // Target rotation angle in radians
+        private const float animationSpeed = 3.0f; // Rotation speed in radians per second
 
         private const string ModelMatrixVariableName = "uModel";
         private const string ViewMatrixVariableName = "uView";
@@ -40,13 +50,15 @@ namespace Grafika_Hazi
             out vec4 outCol;
 
             uniform mat4 uModel;
+            uniform mat4 uSliceRotation; // A forgó lap forgatási mátrixa
             uniform mat4 uView;
             uniform mat4 uProjection;
     
             void main()
             {
                 outCol = vCol;
-                gl_Position = uProjection * uView * uModel * vec4(vPos, 1.0);
+                // A forgatás az origó körül történik, a ModelMatrix (eltolás) UTÁN
+                gl_Position = uProjection * uView * uSliceRotation * uModel * vec4(vPos, 1.0);
             }
             ";
         private static readonly string FragmentShaderSource = @"
@@ -75,6 +87,7 @@ namespace Grafika_Hazi
             window = Window.Create(windowOptions);
 
             window.Load += Window_Load;
+            window.Update += Window_Update;
             window.Render += Window_Render;
             window.Closing += Window_Closing;
 
@@ -85,6 +98,14 @@ namespace Grafika_Hazi
         {
             Gl = window.CreateOpenGL();
             Gl.ClearColor(System.Drawing.Color.White);
+
+            // Input context for keyboard events
+            IInputContext inputContext = window.CreateInput();
+            primaryKeyboard = inputContext.Keyboards[0];
+            primaryKeyboard.KeyDown += Keyboard_KeyDown; // Register the key down event handler
+
+            // Initialize the camera with a position and a target point
+            camera = new Camera(new Vector3D<float>(5f, 5f, 6f), Vector3D<float>.Zero);
 
             LinkProgram();
 
@@ -158,25 +179,41 @@ namespace Grafika_Hazi
                         // Set the model matrix for this piece
                         var model = Matrix4X4.CreateTranslation(x * gap, y * gap, z * gap);
 
-                        rubikPieces.Add(new RubikPiece { Vao = vao, ModelMatrix = model });
+                        // We now also store the Y position in the Rubik's cube grid for each piece
+                        rubikPieces.Add(new RubikPiece { Vao = vao, ModelMatrix = model, GridY = y });
                     }
                 }
             }
 
             Gl.BindVertexArray(0);
 
-            // Fixed camera position and projection for the Rubik's cube
+            // Setting up shader program and uniform locations
             Gl.UseProgram(program);
-            modelLoc = Gl.GetUniformLocation(program, ModelMatrixVariableName);
-            viewLoc = Gl.GetUniformLocation(program, ViewMatrixVariableName);
-            projLoc = Gl.GetUniformLocation(program, ProjectionMatrixVariableName);
+            modelLoc = Gl.GetUniformLocation(program, "uModel");
+            sliceRotLoc = Gl.GetUniformLocation(program, "uSliceRotation");
+            viewLoc = Gl.GetUniformLocation(program, "uView");
+            projLoc = Gl.GetUniformLocation(program, "uProjection");
 
-            // Set up the view and projection matrices (the angle of view)
-            var viewMatrix = Matrix4X4.CreateLookAt(new Vector3D<float>(5f, 5f, 6f), Vector3D<float>.Zero, Vector3D<float>.UnitY);
-            var projMatrix = Matrix4X4.CreatePerspectiveFieldOfView<float>((float)(Math.PI / 4), 600f / 600f, 0.1f, 100f);
-
-            Gl.UniformMatrix4(viewLoc, 1, false, (float*)&viewMatrix);
+            // Set up the view and projection matrices (now only once)
+            var projMatrix = Matrix4X4.CreatePerspectiveFieldOfView<float>((float)(Math.PI / 4), 800f / 600f, 0.1f, 100f);
             Gl.UniformMatrix4(projLoc, 1, false, (float*)&projMatrix);
+        }
+
+        // Update method to handle animation and camera updates
+        private static void Keyboard_KeyDown(IKeyboard keyboard, Key key, int keyCode)
+        {
+            if (key == Key.Escape) window.Close();
+
+            // SPACE: +90 degrees for the top layer
+            if (key == Key.Space)
+            {
+                targetAngle += (float)(Math.PI / 2.0);
+            }
+            // Backspace: -90 degrees for the top layer
+            else if (key == Key.Backspace)
+            {
+                targetAngle -= (float)(Math.PI / 2.0);
+            }
         }
 
         private static float[] GetRubikPieceColors(int x, int y, int z)
@@ -207,21 +244,72 @@ namespace Grafika_Hazi
             return colors.ToArray();
         }
 
+        private static void Window_Update(double deltaTime)
+        {
+            // Camera movement and rotation
+            float moveSpeed = 3.5f * (float)deltaTime; // Movement speed
+            float turnSpeed = 60f * (float)deltaTime;  // Rotation speed
+
+            // Move with arrow keys
+            if (primaryKeyboard.IsKeyPressed(Key.Up)) camera.Move(camera.Front, moveSpeed);
+            if (primaryKeyboard.IsKeyPressed(Key.Down)) camera.Move(-camera.Front, moveSpeed);
+            if (primaryKeyboard.IsKeyPressed(Key.Right)) camera.Move(camera.Right, moveSpeed);
+            if (primaryKeyboard.IsKeyPressed(Key.Left)) camera.Move(-camera.Right, moveSpeed);
+
+            // Rotate with WASD keys
+            if (primaryKeyboard.IsKeyPressed(Key.D)) camera.ModifyDirection(turnSpeed, 0);
+            if (primaryKeyboard.IsKeyPressed(Key.A)) camera.ModifyDirection(-turnSpeed, 0);
+            if (primaryKeyboard.IsKeyPressed(Key.W)) camera.ModifyDirection(0, turnSpeed);
+            if (primaryKeyboard.IsKeyPressed(Key.S)) camera.ModifyDirection(0, -turnSpeed);
+
+            // Smoothly animate the rotation of the top layer of the Rubik's cube
+            if (currentAngle != targetAngle)
+            {
+                float step = animationSpeed * (float)deltaTime;
+
+                if (targetAngle > currentAngle)
+                {
+                    currentAngle += step;
+                    if (currentAngle > targetAngle) currentAngle = targetAngle; // Clamp to target
+                }
+                else
+                {
+                    currentAngle -= step;
+                    if (currentAngle < targetAngle) currentAngle = targetAngle;
+                }
+            }
+        }
         private static unsafe void Window_Render(double deltaTime)
         {
             Gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
-
             Gl.UseProgram(program);
 
-            // We go through each piece of the Rubik's cube and draw it with its own model matrix
+            // Update the view matrix based on the camera's position and orientation
+            var viewMatrix = camera.GetViewMatrix();
+            Gl.UniformMatrix4(viewLoc, 1, false, (float*)&viewMatrix);
+
+            // Calculate the rotation matrix for the top layer based on the current angle
+            var sliceRotationMatrix = Matrix4X4.CreateRotationY(currentAngle);
+            var identityMatrix = Matrix4X4<float>.Identity; // The identity matrix for non-rotating pieces
+
             foreach (var piece in rubikPieces)
             {
                 Gl.BindVertexArray(piece.Vao);
 
+                // Model matrix (its own position)
                 var model = piece.ModelMatrix;
                 Gl.UniformMatrix4(modelLoc, 1, false, (float*)&model);
 
-                // 36 indices = 6 faces * 2 triangles per face * 3 vertices per triangle
+                // IF the piece is in the top layer (y == 1), apply the rotation; otherwise, use the identity matrix
+                if (piece.GridY == 1)
+                {
+                    Gl.UniformMatrix4(sliceRotLoc, 1, false, (float*)&sliceRotationMatrix);
+                }
+                else
+                {
+                    Gl.UniformMatrix4(sliceRotLoc, 1, false, (float*)&identityMatrix);
+                }
+
                 Gl.DrawElements(GLEnum.Triangles, 36, GLEnum.UnsignedInt, null);
             }
 
