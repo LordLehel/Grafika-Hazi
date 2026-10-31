@@ -53,18 +53,48 @@ namespace Grafika_Hazi
 
         private void OnKeyDown(IKeyboard kb, Key key, int keyCode)
         {
-            if (key == Key.Escape)
+            switch (key)
             {
-                window.Close();
-            }
-            // Rotating the slice: R - 90 degrees clockwise, Backspace - 90 degrees counterclockwise
-            else if (key == Key.R)
-            {
-                rubikController.RotateClockwise();
-            }
-            else if (key == Key.Backspace)
-            {
-                rubikController.RotateCounterClockwise();
+                case Key.Escape:
+                    window.Close();
+                    break;
+
+                // Toggle depth mode
+                case Key.Tab:
+                    rubikController.ToggleDepthMode();
+                    break;
+
+                // Select rows (1, 2, 3)
+                case Key.Number1:
+                    rubikController.SelectRow(1);
+                    break;
+                case Key.Number2:
+                    rubikController.SelectRow(2);
+                    break;
+                case Key.Number3:
+                    rubikController.SelectRow(3);
+                    break;
+
+                // Select columns (4, 5, 6)
+                case Key.Number4:
+                    rubikController.SelectColumn(1);
+                    break;
+                case Key.Number5:
+                    rubikController.SelectColumn(2);
+                    break;
+                case Key.Number6:
+                    rubikController.SelectColumn(3);
+                    break;
+
+                // Rotate the selected slice of the cube
+                // Q button: Row -> left (-Y), Column -> down (+X)
+                // E button: Row -> right (+Y), Column -> up (-X)
+                case Key.Q:
+                    rubikController.RotateNegative();
+                    break;
+                case Key.E:
+                    rubikController.RotatePositive();
+                    break;
             }
         }
 

@@ -11,7 +11,9 @@ namespace Grafika_Hazi
     {
         public uint Vao { get; set; }
         public uint ColorVbo { get; set; }
+        public uint InnerVbo { get; set; }
         public Matrix4X4<float> ModelMatrix { get; set; }
+        public Matrix4X4<float> OriginalModelMatrix { get; set; }
         public int GridX { get; set; }
         public int GridY { get; set; }
         public int GridZ { get; set; }
@@ -76,13 +78,14 @@ namespace Grafika_Hazi
                     {
                         uint vao = gl.GenVertexArray();
                         gl.BindVertexArray(vao);
-
                         gl.BindBuffer(GLEnum.ElementArrayBuffer, sharedEbo);
 
+                        // 0 - Position attribute
                         gl.BindBuffer(GLEnum.ArrayBuffer, sharedVbo);
                         gl.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 0, null);
                         gl.EnableVertexAttribArray(0);
 
+                        // 1 - Color attribute
                         float[] colorArray = GetRubikPieceColors(x, y, z);
                         uint colorVbo = gl.GenBuffer();
                         gl.BindBuffer(GLEnum.ArrayBuffer, colorVbo);
@@ -90,13 +93,23 @@ namespace Grafika_Hazi
                         gl.VertexAttribPointer(1, 4, VertexAttribPointerType.Float, false, 0, null);
                         gl.EnableVertexAttribArray(1);
 
+                        // 2 - Inner attribute
+                        float[] innerFlags = GetInnerFaceFlags(x, y, z);
+                        uint innerVbo = gl.GenBuffer();
+                        gl.BindBuffer(GLEnum.ArrayBuffer, innerVbo);
+                        gl.BufferData(GLEnum.ArrayBuffer, (ReadOnlySpan<float>)innerFlags.AsSpan(), GLEnum.StaticDraw);
+                        gl.VertexAttribPointer(2, 1, VertexAttribPointerType.Float, false, 0, null);
+                        gl.EnableVertexAttribArray(2);
+
                         var model = Matrix4X4.CreateTranslation(x * gap, y * gap, z * gap);
 
                         Pieces.Add(new RubikPiece
                         {
                             Vao = vao,
                             ColorVbo = colorVbo,
+                            InnerVbo = innerVbo,
                             ModelMatrix = model,
+                            OriginalModelMatrix = model,
                             GridX = x,
                             GridY = y,
                             GridZ = z
@@ -134,13 +147,44 @@ namespace Grafika_Hazi
             return colors.ToArray();
         }
 
-        public unsafe void Render(int modelLoc, int sliceRotLoc, RubikController controller)
+        // Determines which faces of the piece are inner faces (not visible) based on its grid position
+        private static float[] GetInnerFaceFlags(int x, int y, int z)
+        {
+            var flags = new List<float>();
+
+            // 4 vertices per face
+            void AddFlag(bool isInner) { for (int i = 0; i < 4; i++) flags.Add(isInner ? 1.0f : 0.0f); }
+
+            AddFlag(z != 1);  // Front
+            AddFlag(z != -1); // Back
+            AddFlag(x != -1); // Left
+            AddFlag(x != 1);  // Right
+            AddFlag(y != 1);  // Top
+            AddFlag(y != -1); // Bottom
+
+            return flags.ToArray();
+        }
+
+        public unsafe void Render(int modelLoc, int sliceRotLoc, int isSelLoc, RubikController controller)
         {
             foreach (var piece in Pieces)
             {
                 gl.BindVertexArray(piece.Vao);
 
+                // Is the piece selected? Pass this information to the shader
+                int isSelected = controller.IsPieceSelected(piece) ? 1 : 0;
+                gl.Uniform1(isSelLoc, isSelected);
+
                 var model = piece.ModelMatrix;
+
+                // If the cube is resolved, apply the explosion effect to the pieces based on their grid coordinates and the explosion progress
+                if (controller.IsExploding)
+                {
+                    float p = controller.ExplosionProgress;
+                    var explosionTrans = Matrix4X4.CreateTranslation(piece.GridX * p, piece.GridY * p, piece.GridZ * p);
+                    model = model * explosionTrans;
+                }
+
                 gl.UniformMatrix4(modelLoc, 1, false, (float*)&model);
 
                 var sliceRot = controller.GetSliceRotationMatrix(piece);
@@ -157,6 +201,7 @@ namespace Grafika_Hazi
             foreach (var piece in Pieces)
             {
                 gl.DeleteBuffer(piece.ColorVbo);
+                gl.DeleteBuffer(piece.InnerVbo);
                 gl.DeleteVertexArray(piece.Vao);
             }
             gl.DeleteBuffer(sharedVbo);

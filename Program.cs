@@ -20,13 +20,14 @@ namespace Grafika_Hazi
         private static InputHandler inputHandler = null!;
 
         // Uniform locations
-        private static int modelLoc, viewLoc, projLoc, sliceRotLoc;
+        private static int modelLoc, viewLoc, projLoc, sliceRotLoc, isSelLoc;
 
         // Vertex and Fragment shader source code
         private static readonly string VertexShaderSource = @"
             #version 330 core
             layout (location = 0) in vec3 vPos;
             layout (location = 1) in vec4 vCol;
+            layout (location = 2) in float vIsInner; // 1.0 for inner pieces, 0.0 for outer pieces
 
             out vec4 outCol;
 
@@ -34,10 +35,18 @@ namespace Grafika_Hazi
             uniform mat4 uSliceRotation;
             uniform mat4 uView;
             uniform mat4 uProjection;
+            uniform int uIsSelected; 
     
             void main()
             {
                 outCol = vCol;
+                
+                // Visual effect: If the piece is selected and it's an inner piece, change its color to neon green
+                if (uIsSelected == 1 && vIsInner > 0.5)
+                {
+                    outCol = vec4(0.0, 1.0, 0.0, 1.0); // Neon zöld
+                }
+
                 gl_Position = uProjection * uView * uSliceRotation * uModel * vec4(vPos, 1.0);
             }
             ";
@@ -84,7 +93,10 @@ namespace Grafika_Hazi
             // Initialize the camera, Rubik's cube, and input handler
             camera = new Camera(new Vector3D<float>(5f, 5f, 6f), Vector3D<float>.Zero);
             rubikCube = new RubikCube(Gl);
-            rubikController = new RubikController();
+            rubikController = new RubikController(rubikCube);
+
+            // Scramble the cube
+            rubikController.Scramble(30);
 
             IInputContext inputContext = window.CreateInput();
             inputHandler = new InputHandler(window, inputContext, camera, rubikController);
@@ -113,7 +125,7 @@ namespace Grafika_Hazi
             var viewMatrix = camera.GetViewMatrix();
             Gl.UniformMatrix4(viewLoc, 1, false, (float*)&viewMatrix);
 
-            rubikCube.Render(modelLoc, sliceRotLoc, rubikController);
+            rubikCube.Render(modelLoc, sliceRotLoc, isSelLoc, rubikController);
         }
 
         private static void Window_Closing()
