@@ -1,5 +1,6 @@
 ﻿using Silk.NET.Maths;
 using System;
+using System.Numerics;
 
 namespace Grafika_Hazi
 {
@@ -12,6 +13,12 @@ namespace Grafika_Hazi
 
         private float yaw;
         private float pitch;
+
+        private const float MoveSpeed = 4.5f;
+        private const float MouseSensitivity = 0.12f;
+
+        private bool firstMouseMove = true;
+        private Vector2 lastMousePos;
 
 
         // Constructor that initializes the camera with a position and a target point
@@ -27,22 +34,32 @@ namespace Grafika_Hazi
             UpdateVectors();
         }
 
-        // Updates the camera's front, right, and up vectors based on the current yaw and pitch values
-        public void ModifyDirection(float yawOffset, float pitchOffset)
-        {
-            yaw += yawOffset;
-            pitch += pitchOffset;
+        // Specified movement methods for the camera
+        public void MoveForward(float deltaTime) => Position += Front * MoveSpeed * deltaTime;
+        public void MoveBackward(float deltaTime) => Position -= Front * MoveSpeed * deltaTime;
+        public void MoveRight(float deltaTime) => Position += Right * MoveSpeed * deltaTime;
+        public void MoveLeft(float deltaTime) => Position -= Right * MoveSpeed * deltaTime;
+        public void MoveUp(float deltaTime) => Position += Up * MoveSpeed * deltaTime;
+        public void MoveDown(float deltaTime) => Position -= Up * MoveSpeed * deltaTime;
 
-            // Disable pitch rotation beyond vertical
-            pitch = Math.Clamp(pitch, -89f, 89f);
+        // Processes mouse movement to adjust the camera's yaw and pitch
+        public void ProcessMouseMovement(Vector2 mousePos)
+        {
+            if (firstMouseMove)
+            {
+                lastMousePos = mousePos;
+                firstMouseMove = false;
+                return;
+            }
+
+            float xOffset = (mousePos.X - lastMousePos.X) * MouseSensitivity;
+            float yOffset = (lastMousePos.Y - mousePos.Y) * MouseSensitivity; // Inverted Y-axis for mouse movement
+            lastMousePos = mousePos;
+
+            yaw += xOffset;
+            pitch = Math.Clamp(pitch + yOffset, -89.0f, 89.0f);
 
             UpdateVectors();
-        }
-
-        // Moves the camera in a specified direction
-        public void Move(Vector3D<float> direction, float speed)
-        {
-            Position += direction * speed;
         }
 
         // Get the view matrix for the camera. World coordinates -> Camera coordinates
@@ -54,12 +71,16 @@ namespace Grafika_Hazi
         // Updating the camera's vectors based on the angles
         private void UpdateVectors()
         {
-            Front = new Vector3D<float>(
-                (float)(Math.Cos(yaw * Math.PI / 180) * Math.Cos(pitch * Math.PI / 180)),
-                (float)(Math.Sin(pitch * Math.PI / 180)),
-                (float)(Math.Sin(yaw * Math.PI / 180) * Math.Cos(pitch * Math.PI / 180))
+            float yawRad = (float)(yaw * Math.PI / 180.0);
+            float pitchRad = (float)(pitch * Math.PI / 180.0);
+
+            Vector3D<float> front = new Vector3D<float>(
+                (float)(Math.Cos(yawRad) * Math.Cos(pitchRad)),
+                (float)Math.Sin(pitchRad),
+                (float)(Math.Sin(yawRad) * Math.Cos(pitchRad))
             );
-            Front = Vector3D.Normalize(Front);
+
+            Front = Vector3D.Normalize(front);
             Right = Vector3D.Normalize(Vector3D.Cross(Front, Vector3D<float>.UnitY));
             Up = Vector3D.Normalize(Vector3D.Cross(Right, Front));
         }

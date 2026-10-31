@@ -1,6 +1,9 @@
 <Solution>
   <Folder Name="/Solution Items/">
     <File Path="Camera.cs" />
+    <File Path="InputHandler.cs" />
+    <File Path="RubikController.cs" />
+    <File Path="RubikCube.cs" />
   </Folder>
   <Project Path="Grafika-Hazi.csproj" />
 </Solution>
