@@ -1,126 +1,270 @@
-﻿using Silk.NET.Input;
-using Silk.NET.Maths;
+﻿using Silk.NET.Maths;
 using Silk.NET.OpenGL;
 using Silk.NET.OpenGL.Extensions.ImGui;
 using Silk.NET.Windowing;
-using System.Dynamic;
-using System.Numerics;
-using System.Reflection;
-using Szeminarium;
+using Silk.NET.Input;
+using System;
+using System.Collections.Generic;
 
-namespace GrafikaSzeminarium
+namespace Grafika_Hazi
 {
-    internal class Program
+    internal static class Program
     {
-        private static IWindow graphicWindow;
-
-        private static GL Gl;
-
-        private static ImGuiController imGuiController;
-
-        private static ModelObjectDescriptor centerCube;
-        private static ModelObjectDescriptor diamondCube;
-
-        private static CameraDescriptor camera = new CameraDescriptor();
-
-        private static CubeArrangementModel cubeArrangementModel = new CubeArrangementModel();
-
-        private const string ModelMatrixVariableName = "uModel";
-        private const string NormalMatrixVariableName = "uNormal";
-        private const string ViewMatrixVariableName = "uView";
-        private const string ProjectionMatrixVariableName = "uProjection";
-
-        private const string LightColorVariableName = "uLightColor";
-        private const string LightPositionVariableName = "uLightPos";
-        private const string ViewPositionVariableName = "uViewPos";
-
-        private const string AmbientLightColorVariableName = "uAmbientLightColor";
-        private const string AmbientStrengthVariableName = "uAmbientStrength";
-        private const string DiffuseStrengthVariableName = "uDiffuseStrength";
-        private const string SpecularStrengthVariableName = "uSpecularStrength";
-
-        private const string ShinenessVariableName = "uShininess";
-
-        private static float shininess = 50;
-
-        // a felulettel allithato ertekek (r, g, b)
-        private static Vector3 ambientLightColor = new Vector3(1f, 1f, 1f);
-        private static Vector3 ambientStrength = new Vector3(0.1f, 0.1f, 0.1f);
-        private static Vector3 diffuseStrength = new Vector3(0.3f, 0.3f, 0.3f);
-        private static Vector3 specularStrength = new Vector3(1f, 1f, 1f);
-
-        // a kozponti kocka valtoztathato oldala (1 = elso oldal) es annak szine
-        private const int CenterCubeColoredFace = 1;
-        private static Vector3 centerCubeFaceColor = new Vector3(0f, 1f, 0f);
-
+        // The main entry point for the application.
+        private static IWindow window = null!;
+        private static GL Gl = null!;
         private static uint program;
 
+        private static Camera camera = null!;
+        private static RubikCube rubikCube = null!;
+        private static RubikController rubikController = null!;
+        private static InputHandler inputHandler = null!;
+
+        // az ImGui vezerlo
+        private static ImGuiController imGuiController = null!;
+
+        // Uniform locations
+        private static int modelLoc, viewLoc, projLoc, sliceRotLoc, isSelLoc;
+        // a Phong-arnyalas uniformjai
+        private static int lightColorLoc, lightPosLoc, viewPosLoc;
+
+        // a felulettel allithato ertekek: a feny szine (r, g, b) es helye (x, y, z)
+        private static System.Numerics.Vector3 lightColor = new(1f, 1f, 1f);
+        private static System.Numerics.Vector3 lightPos = new(3f, 5f, 7f);
+
+        // a vertex shader tovabbitja a normalist es a vilagbeli poziciot is
+        private static readonly string VertexShaderSource = @"
+            #version 330 core
+            layout (location = 0) in vec3 vPos;
+            layout (location = 1) in vec4 vCol;
+            layout (location = 2) in float vIsInner; // 1.0 for inner pieces, 0.0 for outer pieces
+            layout (location = 3) in vec3 vNormal;
+
+            out vec4 outCol;
+            out vec3 outNormal;
+            out vec3 outWorldPos;
+
+            uniform mat4 uModel;
+            uniform mat4 uSliceRotation;
+            uniform mat4 uView;
+            uniform mat4 uProjection;
+            uniform int uIsSelected;
+
+            void main()
+            {
+                outCol = vCol;
+
+                // Visual effect: If the piece is selected and it's an inner piece, change its color to neon green
+                if (uIsSelected == 1 && vIsInner > 0.5)
+                {
+                    outCol = vec4(0.0, 1.0, 0.0, 1.0);
+                }
+
+                // A modell- es a szelet-forgatas csak eltolast es forgatast tartalmaz, ezert
+                // a normalis a matrix 3x3-as reszevel helyesen elforgathato
+                mat4 world = uSliceRotation * uModel;
+                vec4 worldPos = world * vec4(vPos, 1.0);
+
+                outWorldPos = worldPos.xyz;
+                outNormal = mat3(world) * vNormal;
+
+                gl_Position = uProjection * uView * worldPos;
+            }
+            ";
+
+        // Phong-arnyalas a fragment shaderben
+        private static readonly string FragmentShaderSource = @"
+            #version 330 core
+            out vec4 FragColor;
+
+            in vec4 outCol;
+            in vec3 outNormal;
+            in vec3 outWorldPos;
+
+            uniform vec3 uLightColor;
+            uniform vec3 uLightPos;
+            uniform vec3 uViewPos;
+
+            // az illuminacios egyutthatok szinkomponensenkent (r, g, b)
+            const vec3 AmbientStrength = vec3(0.25);
+            const vec3 DiffuseStrength = vec3(0.7);
+            const vec3 SpecularStrength = vec3(0.4);
+            const float Shininess = 32.0;
+
+            void main()
+            {
+                vec3 norm = normalize(outNormal);
+                vec3 lightDir = normalize(uLightPos - outWorldPos);
+                vec3 viewDir = normalize(uViewPos - outWorldPos);
+                vec3 reflectDir = reflect(-lightDir, norm);
+
+                vec3 ambient = AmbientStrength * uLightColor;
+
+                float diff = max(dot(norm, lightDir), 0.0);
+                vec3 diffuse = diff * DiffuseStrength * uLightColor;
+
+                float spec = pow(max(dot(viewDir, reflectDir), 0.0), Shininess);
+                vec3 specular = spec * SpecularStrength * uLightColor;
+
+                // az ambiens es a diffuz tag a felulet szinet viszi, a csillanas a fenyet
+                vec3 result = (ambient + diffuse) * outCol.rgb + specular;
+
+                FragColor = vec4(result, outCol.a);
+            }
+            ";
+
+
+        // The main entry point for the application.
         static void Main(string[] args)
         {
             WindowOptions windowOptions = WindowOptions.Default;
-            windowOptions.Title = "Grafika szeminárium";
-            windowOptions.Size = new Silk.NET.Maths.Vector2D<int>(500, 500);
+            windowOptions.Title = "Rubik kocka";
+            windowOptions.Size = new Vector2D<int>(800, 600);
+            windowOptions.PreferredDepthBufferBits = 24;
 
-            graphicWindow = Window.Create(windowOptions);
+            window = Window.Create(windowOptions);
 
-            graphicWindow.Load += GraphicWindow_Load;
-            graphicWindow.Update += GraphicWindow_Update;
-            graphicWindow.Render += GraphicWindow_Render;
-            graphicWindow.Closing += GraphicWindow_Closing;
+            window.Load += Window_Load;
+            window.Update += Window_Update;
+            window.Render += Window_Render;
+            window.Closing += Window_Closing;
 
-            graphicWindow.Run();
+            window.Run();
         }
 
-        private static void GraphicWindow_Closing()
+        private static unsafe void Window_Load()
         {
-            centerCube.Dispose();
-            diamondCube.Dispose();
-            Gl.DeleteProgram(program);
-        }
-
-        private static void GraphicWindow_Load()
-        {
-            Gl = graphicWindow.CreateOpenGL();
-
-            var inputContext = graphicWindow.CreateInput();
-            foreach (var keyboard in inputContext.Keyboards)
-            {
-                keyboard.KeyDown += Keyboard_KeyDown;
-            }
-
-            // Handle resizes
-            graphicWindow.FramebufferResize += s =>
-            {
-                // Adjust the viewport to the new window size
-                Gl.Viewport(s);
-            };
-
-
-
-            imGuiController = new ImGuiController(Gl, graphicWindow, inputContext);
-
-            centerCube = ModelObjectDescriptor.CreateCube(Gl);
-            diamondCube = ModelObjectDescriptor.CreateCube(Gl);
-
+            Gl = window.CreateOpenGL();
             Gl.ClearColor(System.Drawing.Color.White);
-            
-            Gl.Enable(EnableCap.CullFace);
-            Gl.CullFace(TriangleFace.Back);
 
             Gl.Enable(EnableCap.DepthTest);
             Gl.DepthFunc(DepthFunction.Lequal);
 
+            LinkProgram();
 
+            // Initialize the camera, Rubik's cube, and input handler
+            camera = new Camera(new Vector3D<float>(5f, 5f, 6f), Vector3D<float>.Zero);
+            rubikCube = new RubikCube(Gl);
+            rubikController = new RubikController(rubikCube);
+
+            // Scramble the cube
+            rubikController.Scramble(30);
+
+            IInputContext inputContext = window.CreateInput();
+            inputHandler = new InputHandler(window, inputContext, camera, rubikController);
+
+            // az ImGui vezerlo letrehozasa, ugyanazt a bemeneti kontextust hasznalja
+            imGuiController = new ImGuiController(Gl, window, inputContext);
+
+            // Shader program setup
+            Gl.UseProgram(program);
+            modelLoc = Gl.GetUniformLocation(program, "uModel");
+            sliceRotLoc = Gl.GetUniformLocation(program, "uSliceRotation");
+            viewLoc = Gl.GetUniformLocation(program, "uView");
+            projLoc = Gl.GetUniformLocation(program, "uProjection");
+
+            // most lekerjuk az isSelLoc erteket
+            isSelLoc = Gl.GetUniformLocation(program, "uIsSelected");
+            lightColorLoc = Gl.GetUniformLocation(program, "uLightColor");
+            lightPosLoc = Gl.GetUniformLocation(program, "uLightPos");
+            viewPosLoc = Gl.GetUniformLocation(program, "uViewPos");
+
+            var projMatrix = Matrix4X4.CreatePerspectiveFieldOfView<float>((float)(Math.PI / 4), 800f / 600f, 0.1f, 100f);
+            Gl.UniformMatrix4(projLoc, 1, false, (float*)&projMatrix);
+        }
+
+        private static void Window_Update(double deltaTime)
+        {
+            inputHandler.Update(deltaTime);
+            rubikController.Update(deltaTime);
+
+            // az ImGui bemenetenek frissitese
+            imGuiController.Update((float)deltaTime);
+        }
+        private static unsafe void Window_Render(double deltaTime)
+        {
+            Gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+            Gl.UseProgram(program);
+
+            var viewMatrix = camera.GetViewMatrix();
+            Gl.UniformMatrix4(viewLoc, 1, false, (float*)&viewMatrix);
+
+            // a Phong-arnyalas uniformjainak atadasa minden kepkockaban
+            Gl.Uniform3(lightColorLoc, lightColor.X, lightColor.Y, lightColor.Z);
+            Gl.Uniform3(lightPosLoc, lightPos.X, lightPos.Y, lightPos.Z);
+            Gl.Uniform3(viewPosLoc, camera.Position.X, camera.Position.Y, camera.Position.Z);
+
+            rubikCube.Render(modelLoc, sliceRotLoc, isSelLoc, rubikController);
+
+            DrawUi();
+
+            imGuiController.Render();
+        }
+
+        // a grafikus felulet
+        private static void DrawUi()
+        {
+            ImGuiNET.ImGui.Begin("Vilagitas", ImGuiNET.ImGuiWindowFlags.AlwaysAutoResize);
+            ImGuiNET.ImGui.SliderFloat3("Feny szine (R, G, B)", ref lightColor, 0f, 1f);
+            ImGuiNET.ImGui.InputFloat3("Feny helye (X, Y, Z)", ref lightPos);
+            ImGuiNET.ImGui.End();
+
+            // Forgatas
+            ImGuiNET.ImGui.Begin("Forgatas", ImGuiNET.ImGuiWindowFlags.AlwaysAutoResize);
+
+            // aktualisan kijelolt szelet
+            ImGuiNET.ImGui.Text($"Kijelolt: {rubikController.SelectedAxis}, index: {rubikController.SelectedIndex}");
+
+            // sorok (1, 2, 3)
+            ImGuiNET.ImGui.Text("Sor:");
+            if (ImGuiNET.ImGui.Button("Felso (1)")) rubikController.SelectRow(1);
+            ImGuiNET.ImGui.SameLine();
+            if (ImGuiNET.ImGui.Button("Kozep (2)")) rubikController.SelectRow(2);
+            ImGuiNET.ImGui.SameLine();
+            if (ImGuiNET.ImGui.Button("Also (3)")) rubikController.SelectRow(3);
+
+            // oszlopok (4, 5, 6) es a X/Z tengely valto
+            ImGuiNET.ImGui.Text("Oszlop:");
+            if (ImGuiNET.ImGui.Button("Bal (4)")) rubikController.SelectColumn(1);
+            ImGuiNET.ImGui.SameLine();
+            if (ImGuiNET.ImGui.Button("Kozep (5)")) rubikController.SelectColumn(2);
+            ImGuiNET.ImGui.SameLine();
+            if (ImGuiNET.ImGui.Button("Jobb (6)")) rubikController.SelectColumn(3);
+
+            string depthLabel = rubikController.IsDepthMode ? "Oszlop mod: Z (melyseg)" : "Oszlop mod: X";
+            if (ImGuiNET.ImGui.Button(depthLabel + " (Tab)")) rubikController.ToggleDepthMode();
+
+            // forgatas ket iranyba (Q, E) es keveres
+            ImGuiNET.ImGui.Text("Forgatas:");
+            if (ImGuiNET.ImGui.Button("Negativ (Q)")) rubikController.RotateNegative();
+            ImGuiNET.ImGui.SameLine();
+            if (ImGuiNET.ImGui.Button("Pozitiv (E)")) rubikController.RotatePositive();
+
+            if (ImGuiNET.ImGui.Button("Kevers")) rubikController.Scramble(30);
+
+            ImGuiNET.ImGui.End();
+        }
+
+        private static void Window_Closing()
+        {
+            imGuiController.Dispose();
+            rubikCube.Dispose();
+            Gl.DeleteProgram(program);
+        }
+
+        private static void LinkProgram()
+        {
             uint vshader = Gl.CreateShader(ShaderType.VertexShader);
             uint fshader = Gl.CreateShader(ShaderType.FragmentShader);
 
-            Gl.ShaderSource(vshader, GetEmbeddedResourceAsString("Shaders.VertexShader.vert"));
+            Gl.ShaderSource(vshader, VertexShaderSource);
             Gl.CompileShader(vshader);
+            // forditasi hiba eseten kivetel, hogy ne maradjon eszrevetlen
             Gl.GetShader(vshader, ShaderParameterName.CompileStatus, out int vStatus);
             if (vStatus != (int)GLEnum.True)
                 throw new Exception("Vertex shader failed to compile: " + Gl.GetShaderInfoLog(vshader));
 
-            Gl.ShaderSource(fshader, GetEmbeddedResourceAsString("Shaders.FragmentShader.frag"));
+            Gl.ShaderSource(fshader, FragmentShaderSource);
             Gl.CompileShader(fshader);
             Gl.GetShader(fshader, ShaderParameterName.CompileStatus, out int fStatus);
             if (fStatus != (int)GLEnum.True)
@@ -135,203 +279,6 @@ namespace GrafikaSzeminarium
             Gl.DetachShader(program, fshader);
             Gl.DeleteShader(vshader);
             Gl.DeleteShader(fshader);
-            if ((ErrorCode)Gl.GetError() != ErrorCode.NoError)
-            {
-
-            }
-
-            Gl.GetProgram(program, GLEnum.LinkStatus, out var status);
-            if (status == 0)
-            {
-                Console.WriteLine($"Error linking shader {Gl.GetProgramInfoLog(program)}");
-            }
-        }
-
-        private static string GetEmbeddedResourceAsString(string resourceRelativePath)
-        {
-            string resourceFullPath = Assembly.GetExecutingAssembly().GetName().Name + "." + resourceRelativePath;
-
-            using (var resStream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceFullPath))
-            using (var resStreamReader = new StreamReader(resStream))
-            {
-                var text = resStreamReader.ReadToEnd();
-                return text;
-            }
-        }
-
-        private static void Keyboard_KeyDown(IKeyboard keyboard, Key key, int arg3)
-        {
-            switch (key)
-            {
-                case Key.Left:
-                    camera.DecreaseZYAngle();
-                    break;
-                case Key.Right:
-                    camera.IncreaseZYAngle();
-                    break;
-                case Key.Down:
-                    camera.IncreaseDistance();
-                    break;
-                case Key.Up:
-                    camera.DecreaseDistance();
-                    break;
-                case Key.U:
-                    camera.IncreaseZXAngle();
-                    break;
-                case Key.D:
-                    camera.DecreaseZXAngle();
-                    break;
-                case Key.Space:
-                    cubeArrangementModel.AnimationEnabled = !cubeArrangementModel.AnimationEnabled;
-                    break;
-            }
-        }
-
-        private static void GraphicWindow_Update(double deltaTime)
-        {
-            // NO OpenGL
-            // make it threadsafe
-            cubeArrangementModel.AdvanceTime(deltaTime);
-
-            imGuiController.Update((float)deltaTime);
-        }
-
-        private static unsafe void GraphicWindow_Render(double deltaTime)
-        {
-            Gl.Clear(ClearBufferMask.ColorBufferBit);
-            Gl.Clear(ClearBufferMask.DepthBufferBit);
-
-            Gl.UseProgram(program);
-
-            SetUniform3(LightColorVariableName, new Vector3(1f, 1f, 1f));
-            SetUniform3(LightPositionVariableName, new Vector3(0f, 1.2f, 0f));
-            SetUniform3(ViewPositionVariableName, new Vector3(camera.Position.X, camera.Position.Y, camera.Position.Z));
-            SetUniform1(ShinenessVariableName, shininess);
-
-            // a felulettel allitott vektorok atadasa a shadernek
-            SetUniform3(AmbientLightColorVariableName, ambientLightColor);
-            SetUniform3(AmbientStrengthVariableName, ambientStrength);
-            SetUniform3(DiffuseStrengthVariableName, diffuseStrength);
-            SetUniform3(SpecularStrengthVariableName, specularStrength);
-
-            var viewMatrix = Matrix4X4.CreateLookAt(camera.Position, camera.Target, camera.UpVector);
-            SetMatrix(viewMatrix, ViewMatrixVariableName);
-
-            var projectionMatrix = Matrix4X4.CreatePerspectiveFieldOfView<float>((float)(Math.PI / 2), 1024f / 768f, 0.1f, 100f);
-            SetMatrix(projectionMatrix, ProjectionMatrixVariableName);
-
-
-            var modelMatrixCenterCube = Matrix4X4.CreateScale((float)cubeArrangementModel.CenterCubeScale);
-            SetModelMatrix(modelMatrixCenterCube);
-            DrawModelObject(centerCube);
-
-            Matrix4X4<float> diamondScale = Matrix4X4.CreateScale(0.25f);
-            Matrix4X4<float> rotx = Matrix4X4.CreateRotationX((float)Math.PI / 4f);
-            Matrix4X4<float> rotz = Matrix4X4.CreateRotationZ((float)Math.PI / 4f);
-            Matrix4X4<float> roty = Matrix4X4.CreateRotationY((float)cubeArrangementModel.DiamondCubeLocalAngle);
-            Matrix4X4<float> trans = Matrix4X4.CreateTranslation(1f, 1f, 0f);
-            Matrix4X4<float> rotGlobalY = Matrix4X4.CreateRotationY((float)cubeArrangementModel.DiamondCubeGlobalYAngle);
-            Matrix4X4<float> dimondCubeModelMatrix = diamondScale * rotx * rotz * roty * trans * rotGlobalY;
-            SetModelMatrix(dimondCubeModelMatrix);
-            DrawModelObject(diamondCube);
-
-            ImGuiNET.ImGui.Begin("Lighting", ImGuiNET.ImGuiWindowFlags.AlwaysAutoResize | ImGuiNET.ImGuiWindowFlags.NoCollapse);
-            ImGuiNET.ImGui.SliderFloat("Shininess", ref shininess, 5, 100);
-
-            // egy-egy csuszka (r, g, b) az illuminacios egyutthatokhoz
-            ImGuiNET.ImGui.SliderFloat3("Ambient strength", ref ambientStrength, 0f, 1f);
-            ImGuiNET.ImGui.SliderFloat3("Diffuse strength", ref diffuseStrength, 0f, 1f);
-            ImGuiNET.ImGui.SliderFloat3("Specular strength", ref specularStrength, 0f, 1f);
-
-            // a hatterfeny szinosszetetele
-            ImGuiNET.ImGui.SliderFloat3("Ambient light color", ref ambientLightColor, 0f, 1f);
-
-            // szinvalaszto; a puffert csak valtozas eseten irjuk ki
-            if (ImGuiNET.ImGui.ColorEdit3("Center cube face color", ref centerCubeFaceColor))
-            {
-                centerCube.SetFaceColor(CenterCubeColoredFace, centerCubeFaceColor.X, centerCubeFaceColor.Y, centerCubeFaceColor.Z);
-            }
-            ImGuiNET.ImGui.End();
-
-            imGuiController.Render();
-        }
-
-        private static unsafe void SetModelMatrix(Matrix4X4<float> modelMatrix)
-        {
-            SetMatrix(modelMatrix, ModelMatrixVariableName);
-
-            // set also the normal matrix
-            int location = Gl.GetUniformLocation(program, NormalMatrixVariableName);
-            if (location == -1)
-            {
-                throw new Exception($"{NormalMatrixVariableName} uniform not found on shader.");
-            }
-
-            // G = (M^-1)^T
-            var modelMatrixWithoutTranslation = new Matrix4X4<float>(modelMatrix.Row1, modelMatrix.Row2, modelMatrix.Row3, modelMatrix.Row4);
-            modelMatrixWithoutTranslation.M41 = 0;
-            modelMatrixWithoutTranslation.M42 = 0;
-            modelMatrixWithoutTranslation.M43 = 0;
-            modelMatrixWithoutTranslation.M44 = 1;
-
-            Matrix4X4<float> modelInvers;
-            Matrix4X4.Invert<float>(modelMatrixWithoutTranslation, out modelInvers);
-            Matrix3X3<float> normalMatrix = new Matrix3X3<float>(Matrix4X4.Transpose(modelInvers));
-
-            Gl.UniformMatrix3(location, 1, false, (float*)&normalMatrix);
-            CheckError();
-        }
-
-        private static unsafe void SetUniform1(string uniformName, float uniformValue)
-        {
-            int location = Gl.GetUniformLocation(program, uniformName);
-            if (location == -1)
-            {
-                throw new Exception($"{uniformName} uniform not found on shader.");
-            }
-
-            Gl.Uniform1(location, uniformValue);
-            CheckError();
-        }
-
-        private static unsafe void SetUniform3(string uniformName, Vector3 uniformValue)
-        {
-            int location = Gl.GetUniformLocation(program, uniformName);
-            if (location == -1)
-            {
-                throw new Exception($"{uniformName} uniform not found on shader.");
-            }
-
-            Gl.Uniform3(location, uniformValue);
-            CheckError();
-        }
-
-        private static unsafe void DrawModelObject(ModelObjectDescriptor modelObject)
-        {
-            Gl.BindVertexArray(modelObject.Vao);
-            Gl.BindBuffer(GLEnum.ElementArrayBuffer, modelObject.Indices);
-            Gl.DrawElements(PrimitiveType.Triangles, modelObject.IndexArrayLength, DrawElementsType.UnsignedInt, null);
-            Gl.BindBuffer(GLEnum.ElementArrayBuffer, 0);
-            Gl.BindVertexArray(0);
-        }
-
-        private static unsafe void SetMatrix(Matrix4X4<float> mx, string uniformName)
-        {
-            int location = Gl.GetUniformLocation(program, uniformName);
-            if (location == -1)
-            {
-                throw new Exception($"{uniformName} uniform not found on shader.");
-            }
-
-            Gl.UniformMatrix4(location, 1, false, (float*)&mx);
-            CheckError();
-        }
-
-        public static void CheckError()
-        {
-            var error = (ErrorCode)Gl.GetError();
-            if (error != ErrorCode.NoError)
-                throw new Exception("GL.GetError() returned " + error.ToString());
         }
     }
 }
