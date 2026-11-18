@@ -20,57 +20,107 @@ namespace GrafikaSzeminarium
 
         private GL Gl;
 
-        // Oldal letrehozasa
-        public unsafe static ModelObjectDescriptor CreatePlank(GL Gl, bool smoothNormals, float halfAngle)
+        public unsafe static ModelObjectDescriptor CreateCube(GL Gl)
         {
             uint vao = Gl.GenVertexArray();
             Gl.BindVertexArray(vao);
 
-            // a normalis szamolasa: (0,0,1) elforgatva az Y tengely korul halfAngle szoggel
-            float nxRight = smoothNormals ? MathF.Sin(halfAngle) : 0f;
-            float nxLeft = -nxRight;
-            float nz = smoothNormals ? MathF.Cos(halfAngle) : 1f;
-
-            // csucsonkent: pozicio (3 float) + normalis (3 float)
-            // a sorrend a +Z fele nezve oramutato jarasaval ellentetes, igy ez a front face
+            // counter clockwise is front facing
             float[] vertexArray = new float[] {
-                -0.5f,  1f, 0f, nxLeft,  0f, nz,   // bal felso
-                -0.5f, -1f, 0f, nxLeft,  0f, nz,   // bal also
-                 0.5f, -1f, 0f, nxRight, 0f, nz,   // jobb also
-                 0.5f,  1f, 0f, nxRight, 0f, nz,   // jobb felso
+                // top face
+                -0.5f, 0.5f, 0.5f, 0f, 1f, 0f,
+                0.5f, 0.5f, 0.5f, 0f, 1f, 0f,
+                0.5f, 0.5f, -0.5f, 0f, 1f, 0f,
+                -0.5f, 0.5f, -0.5f, 0f, 1f, 0f, 
 
-                -0.5f,  1f, 0f, -nxLeft,  0f, -nz,   // bal felso (hatso oldal)
-                -0.5f, -1f, 0f, -nxLeft,  0f, -nz,   // bal also (hatso oldal)
-                 0.5f, -1f, 0f, -nxRight, 0f, -nz,   // jobb also (hatso oldal)
-                 0.5f,  1f, 0f, -nxRight, 0f, -nz,   // jobb felso (hatso oldal)
+                // front face
+                -0.5f, 0.5f, 0.5f, 0f, 0f, 1f,
+                -0.5f, -0.5f, 0.5f, 0f, 0f, 1f,
+                0.5f, -0.5f, 0.5f, 0f, 0f, 1f,
+                0.5f, 0.5f, 0.5f, 0f, 0f, 1f,
+
+                // left face
+                -0.5f, 0.5f, 0.5f, -1f, 0f, 0f,
+                -0.5f, 0.5f, -0.5f, -1f, 0f, 0f,
+                -0.5f, -0.5f, -0.5f, -1f, 0f, 0f,
+                -0.5f, -0.5f, 0.5f, -1f, 0f, 0f,
+
+                // bottom face
+                -0.5f, -0.5f, 0.5f, 0f, -1f, 0f,
+                0.5f, -0.5f, 0.5f,0f, -1f, 0f,
+                0.5f, -0.5f, -0.5f,0f, -1f, 0f,
+                -0.5f, -0.5f, -0.5f,0f, -1f, 0f,
+
+                // back face
+                0.5f, 0.5f, -0.5f, 0f, 0f, -1f,
+                -0.5f, 0.5f, -0.5f,0f, 0f, -1f,
+                -0.5f, -0.5f, -0.5f,0f, 0f, -1f,
+                0.5f, -0.5f, -0.5f,0f, 0f, -1f,
+
+                // right face
+                0.5f, 0.5f, 0.5f, 1f, 0f, 0f,
+                0.5f, 0.5f, -0.5f,1f, 0f, 0f,
+                0.5f, -0.5f, -0.5f,1f, 0f, 0f,
+                0.5f, -0.5f, 0.5f,1f, 0f, 0f,
             };
 
-            // egyszinu lapok
             float[] colorArray = new float[] {
-                0.8f, 0.5f, 0.2f, 1f,
-                0.8f, 0.5f, 0.2f, 1f,
-                0.8f, 0.5f, 0.2f, 1f,
-                0.8f, 0.5f, 0.2f, 1f,
+                1.0f, 0.0f, 0.0f, 1.0f,
+                1.0f, 0.0f, 0.0f, 1.0f,
+                1.0f, 0.0f, 0.0f, 1.0f,
+                1.0f, 0.0f, 0.0f, 1.0f,
 
-                0.6f, 0.35f, 0.15f, 1f,
-                0.6f, 0.35f, 0.15f, 1f,
-                0.6f, 0.35f, 0.15f, 1f,
-                0.6f, 0.35f, 0.15f, 1f,
+                0.0f, 1.0f, 0.0f, 1.0f,
+                0.0f, 1.0f, 0.0f, 1.0f,
+                0.0f, 1.0f, 0.0f, 1.0f,
+                0.0f, 1.0f, 0.0f, 1.0f,
+
+                0.0f, 0.0f, 1.0f, 1.0f,
+                0.0f, 0.0f, 1.0f, 1.0f,
+                0.0f, 0.0f, 1.0f, 1.0f,
+                0.0f, 0.0f, 1.0f, 1.0f,
+
+                1.0f, 0.0f, 1.0f, 1.0f,
+                1.0f, 0.0f, 1.0f, 1.0f,
+                1.0f, 0.0f, 1.0f, 1.0f,
+                1.0f, 0.0f, 1.0f, 1.0f,
+
+                0.0f, 1.0f, 1.0f, 1.0f,
+                0.0f, 1.0f, 1.0f, 1.0f,
+                0.0f, 1.0f, 1.0f, 1.0f,
+                0.0f, 1.0f, 1.0f, 1.0f,
+
+                1.0f, 1.0f, 0.0f, 1.0f,
+                1.0f, 1.0f, 0.0f, 1.0f,
+                1.0f, 1.0f, 0.0f, 1.0f,
+                1.0f, 1.0f, 0.0f, 1.0f,
             };
 
-            // ket haromszog alkotja a teglalapot elol, ket masik hatul
             uint[] indexArray = new uint[] {
                 0, 1, 2,
                 0, 2, 3,
 
-                4, 6, 5,
-                4, 7, 6
+                4, 5, 6,
+                4, 6, 7,
+
+                8, 9, 10,
+                10, 11, 8,
+
+                12, 14, 13,
+                12, 15, 14,
+
+                17, 16, 19,
+                17, 19, 18,
+
+                20, 22, 21,
+                20, 23, 22
             };
 
             uint vertices = Gl.GenBuffer();
             Gl.BindBuffer(GLEnum.ArrayBuffer, vertices);
             Gl.BufferData(GLEnum.ArrayBuffer, (ReadOnlySpan<float>)vertexArray.AsSpan(), GLEnum.StaticDraw);
-            // 0. attributum a pozicio, 2. a normalis
+            // 0 is position
+            // 2 is normals
             uint offsetPos = 0;
             uint offsetNormals = offsetPos + 3 * sizeof(float);
             uint vertexSize = offsetNormals + 3 * sizeof(float);
@@ -83,7 +133,7 @@ namespace GrafikaSzeminarium
             uint colors = Gl.GenBuffer();
             Gl.BindBuffer(GLEnum.ArrayBuffer, colors);
             Gl.BufferData(GLEnum.ArrayBuffer, (ReadOnlySpan<float>)colorArray.AsSpan(), GLEnum.StaticDraw);
-            // 1. attributum a szin
+            // 1 is color
             Gl.VertexAttribPointer(1, 4, VertexAttribPointerType.Float, false, 0, null);
             Gl.EnableVertexAttribArray(1);
             Gl.BindBuffer(GLEnum.ArrayBuffer, 0);
@@ -93,7 +143,34 @@ namespace GrafikaSzeminarium
             Gl.BufferData(GLEnum.ElementArrayBuffer, (ReadOnlySpan<uint>)indexArray.AsSpan(), GLEnum.StaticDraw);
             Gl.BindBuffer(GLEnum.ElementArrayBuffer, 0);
 
-            return new ModelObjectDescriptor() { Vao = vao, Vertices = vertices, Colors = colors, Indices = indices, IndexArrayLength = (uint)indexArray.Length, Gl = Gl };
+            return new ModelObjectDescriptor() {Vao= vao, Vertices = vertices, Colors = colors, Indices = indices, IndexArrayLength = (uint)indexArray.Length, Gl = Gl};
+
+        }
+
+        // egy kockaoldal szinenek atirasa futasidoben
+        // faceIndex: 0 felso, 1 elso, 2 bal, 3 also, 4 hatso, 5 jobb
+        public void SetFaceColor(int faceIndex, float r, float g, float b)
+        {
+            const int VerticesPerFace = 4;
+            const int FloatsPerColor = 4;
+
+            // egy oldal mind a 4 csucsa ugyanazt a szint kapja
+            float[] faceColors = new float[VerticesPerFace * FloatsPerColor];
+            for (int i = 0; i < VerticesPerFace; i++)
+            {
+                faceColors[i * FloatsPerColor + 0] = r;
+                faceColors[i * FloatsPerColor + 1] = g;
+                faceColors[i * FloatsPerColor + 2] = b;
+                faceColors[i * FloatsPerColor + 3] = 1f;
+            }
+
+            // az oldal helye a szinpufferben
+            nint byteOffset = faceIndex * VerticesPerFace * FloatsPerColor * sizeof(float);
+
+            // nem toltjuk fel az egesz puffert, csak a modositott oldalt
+            Gl.BindBuffer(GLEnum.ArrayBuffer, Colors);
+            Gl.BufferSubData(GLEnum.ArrayBuffer, byteOffset, (ReadOnlySpan<float>)faceColors.AsSpan());
+            Gl.BindBuffer(GLEnum.ArrayBuffer, 0);
         }
 
         protected virtual void Dispose(bool disposing)

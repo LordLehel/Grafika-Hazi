@@ -13,32 +13,18 @@ namespace GrafikaSzeminarium
     internal class Program
     {
         private static IWindow graphicWindow;
+
         private static GL Gl;
+
         private static ImGuiController imGuiController;
 
-        // lapos normalisokkal rajzolt lap
-        private static ModelObjectDescriptor plankFlat;
-        // simitott (10 fokkal elfordulo) normalisokkal rajzolt lap
-        private static ModelObjectDescriptor plankSmooth;
+        private static ModelObjectDescriptor centerCube;
+        private static ModelObjectDescriptor diamondCube;
 
         private static CameraDescriptor camera = new CameraDescriptor();
 
-        // - A dezsa parameterei -
-        // a lapok szama a koron
-        private const int PlankCount = 18;
-        // egy lap szelessege
-        private const float PlankWidth = 1f;
+        private static CubeArrangementModel cubeArrangementModel = new CubeArrangementModel();
 
-        // szog ket szomszedos lap kozott (20 fok)
-        private static readonly float StepAngle = 2f * MathF.PI / PlankCount;
-        // a lepes fele (10 fok)
-        private static readonly float HalfAngle = StepAngle / 2f;
-
-        private static readonly float Apothem = (PlankWidth / 2f) / MathF.Tan(HalfAngle);
-        // a dezsa kulso sugara (a lapok szelso elei)
-        private static readonly float OuterRadius = MathF.Sqrt(Apothem * Apothem + (PlankWidth / 2f) * (PlankWidth / 2f));
-
-        // Shader: uniform valtozok
         private const string ModelMatrixVariableName = "uModel";
         private const string NormalMatrixVariableName = "uNormal";
         private const string ViewMatrixVariableName = "uView";
@@ -48,22 +34,35 @@ namespace GrafikaSzeminarium
         private const string LightPositionVariableName = "uLightPos";
         private const string ViewPositionVariableName = "uViewPos";
 
+        private const string AmbientLightColorVariableName = "uAmbientLightColor";
+        private const string AmbientStrengthVariableName = "uAmbientStrength";
+        private const string DiffuseStrengthVariableName = "uDiffuseStrength";
+        private const string SpecularStrengthVariableName = "uSpecularStrength";
+
         private const string ShinenessVariableName = "uShininess";
 
-        // A csillanas erossege
         private static float shininess = 50;
+
+        // a felulettel allithato ertekek (r, g, b)
+        private static Vector3 ambientLightColor = new Vector3(1f, 1f, 1f);
+        private static Vector3 ambientStrength = new Vector3(0.1f, 0.1f, 0.1f);
+        private static Vector3 diffuseStrength = new Vector3(0.3f, 0.3f, 0.3f);
+        private static Vector3 specularStrength = new Vector3(1f, 1f, 1f);
+
+        // a kozponti kocka valtoztathato oldala (1 = elso oldal) es annak szine
+        private const int CenterCubeColoredFace = 1;
+        private static Vector3 centerCubeFaceColor = new Vector3(0f, 1f, 0f);
 
         private static uint program;
 
         static void Main(string[] args)
         {
             WindowOptions windowOptions = WindowOptions.Default;
-            windowOptions.Title = "Grafika szeminarium";
+            windowOptions.Title = "Grafika szeminárium";
             windowOptions.Size = new Silk.NET.Maths.Vector2D<int>(500, 500);
 
             graphicWindow = Window.Create(windowOptions);
 
-            // Esemenykezelok regisztralasa
             graphicWindow.Load += GraphicWindow_Load;
             graphicWindow.Update += GraphicWindow_Update;
             graphicWindow.Render += GraphicWindow_Render;
@@ -72,49 +71,46 @@ namespace GrafikaSzeminarium
             graphicWindow.Run();
         }
 
-        // Eroforrasfelszabaditas
         private static void GraphicWindow_Closing()
         {
-            plankFlat.Dispose();
-            plankSmooth.Dispose();
+            centerCube.Dispose();
+            diamondCube.Dispose();
             Gl.DeleteProgram(program);
         }
 
-        // Inicializalas
         private static void GraphicWindow_Load()
         {
             Gl = graphicWindow.CreateOpenGL();
 
-            // Billentyuzet esemenyek
             var inputContext = graphicWindow.CreateInput();
             foreach (var keyboard in inputContext.Keyboards)
             {
                 keyboard.KeyDown += Keyboard_KeyDown;
             }
 
-            // Atmeretezeskor a nezet igazitasa
+            // Handle resizes
             graphicWindow.FramebufferResize += s =>
             {
+                // Adjust the viewport to the new window size
                 Gl.Viewport(s);
             };
 
+
+
             imGuiController = new ImGuiController(Gl, graphicWindow, inputContext);
 
-            // A ket lap letrehozasa
-            plankFlat = ModelObjectDescriptor.CreatePlank(Gl, false, HalfAngle);
-            plankSmooth = ModelObjectDescriptor.CreatePlank(Gl, true, HalfAngle);
+            centerCube = ModelObjectDescriptor.CreateCube(Gl);
+            diamondCube = ModelObjectDescriptor.CreateCube(Gl);
 
             Gl.ClearColor(System.Drawing.Color.White);
-
-            // A hatso lapokat nem rajzoljuk
+            
             Gl.Enable(EnableCap.CullFace);
             Gl.CullFace(TriangleFace.Back);
 
-            // Melysegteszt
             Gl.Enable(EnableCap.DepthTest);
             Gl.DepthFunc(DepthFunction.Lequal);
 
-            // Shaderek forditasa
+
             uint vshader = Gl.CreateShader(ShaderType.VertexShader);
             uint fshader = Gl.CreateShader(ShaderType.FragmentShader);
 
@@ -130,13 +126,11 @@ namespace GrafikaSzeminarium
             if (fStatus != (int)GLEnum.True)
                 throw new Exception("Fragment shader failed to compile: " + Gl.GetShaderInfoLog(fshader));
 
-            // Program osszeallitasa es linkelese
             program = Gl.CreateProgram();
             Gl.AttachShader(program, vshader);
             Gl.AttachShader(program, fshader);
             Gl.LinkProgram(program);
 
-            // Shader objectumok felszabaditasa
             Gl.DetachShader(program, vshader);
             Gl.DetachShader(program, fshader);
             Gl.DeleteShader(vshader);
@@ -153,7 +147,6 @@ namespace GrafikaSzeminarium
             }
         }
 
-        // A shader forrasat az assembly beagyazott eroforrasai kozul olvassa be
         private static string GetEmbeddedResourceAsString(string resourceRelativePath)
         {
             string resourceFullPath = Assembly.GetExecutingAssembly().GetName().Name + "." + resourceRelativePath;
@@ -166,7 +159,6 @@ namespace GrafikaSzeminarium
             }
         }
 
-        // Kamera iranyitas billentyukkel
         private static void Keyboard_KeyDown(IKeyboard keyboard, Key key, int arg3)
         {
             switch (key)
@@ -189,12 +181,18 @@ namespace GrafikaSzeminarium
                 case Key.D:
                     camera.DecreaseZXAngle();
                     break;
+                case Key.Space:
+                    cubeArrangementModel.AnimationEnabled = !cubeArrangementModel.AnimationEnabled;
+                    break;
             }
         }
 
         private static void GraphicWindow_Update(double deltaTime)
         {
-            // Itt nem hasznalunk OpenGL-t, csak az ImGui bemenetet frissitjuk
+            // NO OpenGL
+            // make it threadsafe
+            cubeArrangementModel.AdvanceTime(deltaTime);
+
             imGuiController.Update((float)deltaTime);
         }
 
@@ -206,62 +204,70 @@ namespace GrafikaSzeminarium
             Gl.UseProgram(program);
 
             SetUniform3(LightColorVariableName, new Vector3(1f, 1f, 1f));
-            // A feny a kamera helyen van
-            SetUniform3(LightPositionVariableName, new Vector3(camera.Position.X, camera.Position.Y, camera.Position.Z));
+            SetUniform3(LightPositionVariableName, new Vector3(0f, 1.2f, 0f));
             SetUniform3(ViewPositionVariableName, new Vector3(camera.Position.X, camera.Position.Y, camera.Position.Z));
             SetUniform1(ShinenessVariableName, shininess);
+
+            // a felulettel allitott vektorok atadasa a shadernek
+            SetUniform3(AmbientLightColorVariableName, ambientLightColor);
+            SetUniform3(AmbientStrengthVariableName, ambientStrength);
+            SetUniform3(DiffuseStrengthVariableName, diffuseStrength);
+            SetUniform3(SpecularStrengthVariableName, specularStrength);
 
             var viewMatrix = Matrix4X4.CreateLookAt(camera.Position, camera.Target, camera.UpVector);
             SetMatrix(viewMatrix, ViewMatrixVariableName);
 
-            // Az oldalarany az ablak akt. meretebol szamolodik
-            float aspect = (float)graphicWindow.Size.X / graphicWindow.Size.Y;
-            var projectionMatrix = Matrix4X4.CreatePerspectiveFieldOfView<float>((float)(Math.PI / 2), aspect, 0.1f, 100f);
+            var projectionMatrix = Matrix4X4.CreatePerspectiveFieldOfView<float>((float)(Math.PI / 2), 1024f / 768f, 0.1f, 100f);
             SetMatrix(projectionMatrix, ProjectionMatrixVariableName);
 
-            // A ket dezsa kozeppontja
-            float barrelOffset = OuterRadius + 0.5f;
-            DrawBarrel(plankFlat, -barrelOffset);    // bal: a lapok sikjara meroleges normalisok
-            DrawBarrel(plankSmooth, barrelOffset);   // jobb: 10 fokkal elfordulo, simitott normalisok
 
-            // ImGui ablak
+            var modelMatrixCenterCube = Matrix4X4.CreateScale((float)cubeArrangementModel.CenterCubeScale);
+            SetModelMatrix(modelMatrixCenterCube);
+            DrawModelObject(centerCube);
+
+            Matrix4X4<float> diamondScale = Matrix4X4.CreateScale(0.25f);
+            Matrix4X4<float> rotx = Matrix4X4.CreateRotationX((float)Math.PI / 4f);
+            Matrix4X4<float> rotz = Matrix4X4.CreateRotationZ((float)Math.PI / 4f);
+            Matrix4X4<float> roty = Matrix4X4.CreateRotationY((float)cubeArrangementModel.DiamondCubeLocalAngle);
+            Matrix4X4<float> trans = Matrix4X4.CreateTranslation(1f, 1f, 0f);
+            Matrix4X4<float> rotGlobalY = Matrix4X4.CreateRotationY((float)cubeArrangementModel.DiamondCubeGlobalYAngle);
+            Matrix4X4<float> dimondCubeModelMatrix = diamondScale * rotx * rotz * roty * trans * rotGlobalY;
+            SetModelMatrix(dimondCubeModelMatrix);
+            DrawModelObject(diamondCube);
+
             ImGuiNET.ImGui.Begin("Lighting", ImGuiNET.ImGuiWindowFlags.AlwaysAutoResize | ImGuiNET.ImGuiWindowFlags.NoCollapse);
             ImGuiNET.ImGui.SliderFloat("Shininess", ref shininess, 5, 100);
+
+            // egy-egy csuszka (r, g, b) az illuminacios egyutthatokhoz
+            ImGuiNET.ImGui.SliderFloat3("Ambient strength", ref ambientStrength, 0f, 1f);
+            ImGuiNET.ImGui.SliderFloat3("Diffuse strength", ref diffuseStrength, 0f, 1f);
+            ImGuiNET.ImGui.SliderFloat3("Specular strength", ref specularStrength, 0f, 1f);
+
+            // a hatterfeny szinosszetetele
+            ImGuiNET.ImGui.SliderFloat3("Ambient light color", ref ambientLightColor, 0f, 1f);
+
+            // szinvalaszto; a puffert csak valtozas eseten irjuk ki
+            if (ImGuiNET.ImGui.ColorEdit3("Center cube face color", ref centerCubeFaceColor))
+            {
+                centerCube.SetFaceColor(CenterCubeColoredFace, centerCubeFaceColor.X, centerCubeFaceColor.Y, centerCubeFaceColor.Z);
+            }
             ImGuiNET.ImGui.End();
 
             imGuiController.Render();
         }
 
-        // Hordo kirajzolasa
-        private static unsafe void DrawBarrel(ModelObjectDescriptor plank, float xOffset)
-        {
-            // a teljes dezsa eltolasa oldalra
-            var barrelShift = Matrix4X4.CreateTranslation(xOffset, 0f, 0f);
-
-            for (int i = 0; i < PlankCount; i++)
-            {
-                var model = Matrix4X4.CreateTranslation(0f, 0f, Apothem)
-                          * Matrix4X4.CreateRotationY(i * StepAngle)
-                          * barrelShift;
-
-                SetModelMatrix(model);
-                DrawModelObject(plank);
-            }
-        }
-
-        // Modell matrix es normal matrix beallitasa
         private static unsafe void SetModelMatrix(Matrix4X4<float> modelMatrix)
         {
             SetMatrix(modelMatrix, ModelMatrixVariableName);
 
-            // normal matrix beallitasa
+            // set also the normal matrix
             int location = Gl.GetUniformLocation(program, NormalMatrixVariableName);
             if (location == -1)
             {
                 throw new Exception($"{NormalMatrixVariableName} uniform not found on shader.");
             }
 
-            // G = (M^-1)^T, az eltolas nelkul
+            // G = (M^-1)^T
             var modelMatrixWithoutTranslation = new Matrix4X4<float>(modelMatrix.Row1, modelMatrix.Row2, modelMatrix.Row3, modelMatrix.Row4);
             modelMatrixWithoutTranslation.M41 = 0;
             modelMatrixWithoutTranslation.M42 = 0;
@@ -276,7 +282,6 @@ namespace GrafikaSzeminarium
             CheckError();
         }
 
-        // float uniform beallitasa
         private static unsafe void SetUniform1(string uniformName, float uniformValue)
         {
             int location = Gl.GetUniformLocation(program, uniformName);
@@ -289,7 +294,6 @@ namespace GrafikaSzeminarium
             CheckError();
         }
 
-        // vec3 uniform beallitasa
         private static unsafe void SetUniform3(string uniformName, Vector3 uniformValue)
         {
             int location = Gl.GetUniformLocation(program, uniformName);
@@ -302,7 +306,6 @@ namespace GrafikaSzeminarium
             CheckError();
         }
 
-        // modell kirajzolasa
         private static unsafe void DrawModelObject(ModelObjectDescriptor modelObject)
         {
             Gl.BindVertexArray(modelObject.Vao);
@@ -312,7 +315,6 @@ namespace GrafikaSzeminarium
             Gl.BindVertexArray(0);
         }
 
-        // mat4 uniform beallitasa
         private static unsafe void SetMatrix(Matrix4X4<float> mx, string uniformName)
         {
             int location = Gl.GetUniformLocation(program, uniformName);
@@ -325,7 +327,6 @@ namespace GrafikaSzeminarium
             CheckError();
         }
 
-        // Hibakezeles
         public static void CheckError()
         {
             var error = (ErrorCode)Gl.GetError();
